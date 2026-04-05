@@ -238,26 +238,35 @@ function parseReceipt(text, today){
 
   // ──────────────────────────────────────────
   // 【優先】パターン0: ラ・ムー形式
-  //   「6桁数字 ※ 商品名　¥金額」
+  //   「6桁数字（※や区切り文字あり/なし）商品名 金額」
+  //   ※がOCRで別文字に化けても対応するため、
+  //   「行頭が6桁数字で始まり、その後に日本語を含む商品名＋金額」で判定
   //   例: 005151※明太マヨサンドはんぺん ¥89
-  //   このパターンにマッチした行だけを商品として扱う
+  //       005151米明太マヨサンドはんぺん 89
   // ──────────────────────────────────────────
-  const LAMU_RE = /^\d{6}[※＊*]\s*(.+?)\s+[¥￥\\]?\s*(\d{1,6})\s*$/;
-  const lamuItems = [];
-  for(const line of lines){
-    const m = line.match(LAMU_RE);
-    if(m){
+  // ラ・ムー形式かどうか：6桁コード行が3行以上あればラ・ムー形式と判定
+  const LAMU_CODE_RE = /^\d{6}/;
+  const lamuCodeLines = lines.filter(l => LAMU_CODE_RE.test(l));
+  const isLamuFormat = lamuCodeLines.length >= 1;
+
+  if(isLamuFormat){
+    // 6桁コード＋任意区切り＋商品名＋金額
+    // ※がどんな文字に化けても対応：コード直後の非数字1文字を区切りとして許容
+    const LAMU_RE = /^\d{6}.?\s*([^\d¥￥\\].+?)\s+[¥￥\\]?\s*(\d{1,6})\s*$/;
+    for(const line of lines){
+      const m = line.match(LAMU_RE);
+      if(!m) continue;
       const name = cleanName(m[1]);
       const amount = parseInt(m[2]);
-      if(name && amount >= 10 && amount <= 100000){
-        lamuItems.push({name, amount, category: guessCategory(name)});
+      // 合計・税・預り・釣りなどの除外ワード
+      const isSkip = /合計|小計|税|預り|釣|ポイント|割引|値引|スキャン|レジ|担当|会員/.test(line);
+      if(isSkip) continue;
+      if(name && amount >= 10 && amount <= 99999 && /[\u3040-\u9FFF]/.test(name)){
+        // 日本語文字を含む名前のみ（コード・数字行を除外）
+        items.push({name, amount, category: guessCategory(name)});
       }
     }
-  }
-
-  // ラ・ムー形式の行が1件でも見つかればそれだけを返す
-  if(lamuItems.length > 0){
-    return {date, store, items: lamuItems};
+    if(items.length > 0) return {date, store, items};
   }
 
   // ──────────────────────────────────────────

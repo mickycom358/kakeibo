@@ -373,6 +373,13 @@ function showToast(msg){
 }
 
 renderLedger();
-</script>
+</scriptfunction saveData(data) {
+  localStorage.setItem("kakeiboData", JSON.stringify(data));
+}
+
+function loadData() {
+  const data = localStorage.getItem("kakeiboData");
+  return data ? JSON.parse(data) : [];
+}>
 </body>
 </html>

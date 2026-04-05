@@ -121,6 +121,10 @@ select.efi option{background:#1e293b}
       <div class="plbl">📄 読み込んだレシート</div>
       <img id="prev-img" src="" alt="">
     </div>
+    <div id="ocr-debug" style="display:none;background:#0f172a;border:1px solid #38bdf8;border-radius:12px;padding:12px;margin-bottom:14px;">
+      <div style="font-size:11px;color:#38bdf8;font-weight:700;margin-bottom:8px;">🔍 OCR生テキスト（確認用）</div>
+      <pre id="ocr-raw" style="font-size:11px;color:#94a3b8;white-space:pre-wrap;word-break:break-all;max-height:300px;overflow-y:auto;"></pre>
+    </div>
     <div class="tips">
       <div class="ttl">📌 使い方</div>
       <div class="tip"><span class="tipn">1.</span>エリアをタップしてカメラまたは写真を選ぶ</div>
@@ -195,6 +199,8 @@ async function processFile(file){
     if(d.IsErroredOnProcessing) throw new Error('OCR失敗: '+(d.ErrorMessage||'不明'));
     const txt=d.ParsedResults?.[0]?.ParsedText||'';
     if(!txt.trim()) throw new Error('テキストを読み取れませんでした');
+    document.getElementById('ocr-debug').style.display='block';
+    document.getElementById('ocr-raw').textContent=txt;
     setLoading(true,'品目を解析中...');
     const today=new Date().toISOString().slice(0,10);
     const parsed=parseReceipt(txt,today);

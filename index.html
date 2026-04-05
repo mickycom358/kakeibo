@@ -256,21 +256,29 @@ function parseReceipt(text, today){
   const isLamuFormat = lamuCodeLines.length >= 1;
 
   if(isLamuFormat){
-    // 6桁コード＋任意区切り＋商品名＋金額
-    // ※がどんな文字に化けても対応：コード直後の非数字1文字を区切りとして許容
-    const LAMU_RE = /^\d{6}.?\s*([^\d¥￥\\].+?)\s+[¥￥\\]?\s*(\d{1,6})\s*$/;
-    for(const line of lines){
-      const m = line.match(LAMU_RE);
-      if(!m) continue;
-      const name = cleanName(m[1]);
-      const amount = parseInt(m[2]);
-      // 合計・税・預り・釣りなどの除外ワード
-      const isSkip = /合計|小計|税|預り|釣|ポイント|割引|値引|スキャン|レジ|担当|会員/.test(line);
-      if(isSkip) continue;
-      if(name && amount >= 10 && amount <= 99999 && /[\u3040-\u9FFF]/.test(name)){
-        // 日本語文字を含む名前のみ（コード・数字行を除外）
-        items.push({name, amount, category: guessCategory(name)});
+    const SKIP_RE2=/合計|小計|税|預り|釣|ポイント|割引|値引|スキャン|レジ|担当|会員|お買上|レシート|店No/;
+    let ii=0;
+    while(ii<lines.length-1){
+      const ll=lines[ii];
+      if(/^\d{6}/.test(ll)&&!SKIP_RE2.test(ll)){
+        const nm2=ll.match(/^\d{6}.\s*(.+)/);
+        if(nm2){
+          const name2=cleanName(nm2[1]);
+          if(name2&&/[\u3040-\u9FFF]/.test(name2)){
+            let amt2=null;
+            for(let jj=1;jj<=2&&ii+jj<lines.length;jj++){
+              const nxt=lines[ii+jj];
+              const am2=nxt.match(/^[¥￥]?\s*(\d{1,6})\s*$/);
+              if(am2){amt2=parseInt(am2[1]);ii+=jj;break;}
+              if(/^\d{6}/.test(nxt))break;
+            }
+            if(amt2&&amt2>=10&&amt2<=99999){
+              items.push({name:name2,amount:amt2,category:guessCategory(name2)});
+            }
+          }
+        }
       }
+      ii++;
     }
     if(items.length > 0) return {date, store, items};
   }

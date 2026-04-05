@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -208,7 +209,7 @@ async function processFile(file){
 }
 
 // ──────────────────────────────────────────
-// レシート解析（強化版）
+// レシート解析
 // ──────────────────────────────────────────
 function parseReceipt(text, today){
   const lines=text.split('\n').map(l=>l.trim()).filter(l=>l);
@@ -228,25 +229,48 @@ function parseReceipt(text, today){
   for(const l of lines.slice(0,10)){
     if(l.length<2) continue;
     if(skipW.some(w=>l.includes(w))) continue;
-    if(/^\d{4,}/.test(l)) continue; // 長い数字で始まる行はスキップ
+    if(/^\d{4,}/.test(l)) continue;
     store=l.replace(/[※＊\*①②③]/g,'').trim();
     if(store.length>=2) break;
   }
 
-  // スキップワード
-  const skipL=['合計','小計','内税','外税','消費税','お預り','お釣','釣銭','ポイント','割引','値引','軽減税率','対象','change','total','subtotal','レジ番','担当','スキャン番','会計レジ','登録レジ','スキャンレジ','レシートNo','店No'];
-
   const items=[];
 
+  // ──────────────────────────────────────────
+  // 【優先】パターン0: ラ・ムー形式
+  //   「6桁数字 ※ 商品名　¥金額」
+  //   例: 005151※明太マヨサンドはんぺん ¥89
+  //   このパターンにマッチした行だけを商品として扱う
+  // ──────────────────────────────────────────
+  const LAMU_RE = /^\d{6}[※＊*]\s*(.+?)\s+[¥￥\\]?\s*(\d{1,6})\s*$/;
+  const lamuItems = [];
   for(const line of lines){
-    // スキップ行
+    const m = line.match(LAMU_RE);
+    if(m){
+      const name = cleanName(m[1]);
+      const amount = parseInt(m[2]);
+      if(name && amount >= 10 && amount <= 100000){
+        lamuItems.push({name, amount, category: guessCategory(name)});
+      }
+    }
+  }
+
+  // ラ・ムー形式の行が1件でも見つかればそれだけを返す
+  if(lamuItems.length > 0){
+    return {date, store, items: lamuItems};
+  }
+
+  // ──────────────────────────────────────────
+  // 通常スーパー形式へのフォールバック
+  // ──────────────────────────────────────────
+  const skipL=['合計','小計','内税','外税','消費税','お預り','お釣','釣銭','ポイント','割引','値引','軽減税率','対象','change','total','subtotal','レジ番','担当','スキャン番','会計レジ','登録レジ','スキャンレジ','レシートNo','店No'];
+
+  for(const line of lines){
     if(skipL.some(w=>line.toLowerCase().includes(w.toLowerCase()))) continue;
     if(line.length<3) continue;
 
-    // ── パターン1: 「商品コード※商品名 金額」形式（スーパー系）
-    // 例: 005151※明太マヨソード はんぺん ¥89
-    // 例: 062070※国産若鶏肝（冷凍）心 ¥199
-    let m=line.match(/^\d{4,}\s*[※＊\*]?\s*(.+?)\s+[¥￥\\]?\s*(\d{1,6})\s*$/);
+    // パターン1: 「商品コード※商品名 金額」（コードが4桁以上＋※あり）
+    let m=line.match(/^\d{4,}\s*[※＊\*]\s*(.+?)\s+[¥￥\\]?\s*(\d{1,6})\s*$/);
     if(m){
       const name=cleanName(m[1]);
       const amount=parseInt(m[2]);
@@ -256,7 +280,7 @@ function parseReceipt(text, today){
       }
     }
 
-    // ── パターン2: 「商品名 金額」形式（通常）
+    // パターン2: 「商品名 金額」（純粋な名前＋金額）
     m=line.match(/^(.+?)\s+[¥￥\\]?\s*(\d{1,6})\s*$/);
     if(m){
       const name=cleanName(m[1]);
@@ -266,12 +290,9 @@ function parseReceipt(text, today){
         continue;
       }
     }
-
-    // ── パターン3: 金額が次の行にある場合（名前行 + 金額行）
-    // 例: 「はんぺん」の次行に「89」
   }
 
-  // パターン3の補完：名前だけの行と直後の数字行をペアに
+  // パターン3: 名前行＋次行が金額
   if(items.length===0){
     for(let i=0;i<lines.length-1;i++){
       const l=lines[i], next=lines[i+1];
@@ -294,17 +315,17 @@ function parseReceipt(text, today){
 // 品目名のクリーニング
 function cleanName(raw){
   return raw
-    .replace(/^\d{3,}\s*/,'')      // 先頭の商品コード除去
-    .replace(/^[※＊\*]\s*/,'')     // 先頭の※除去
-    .replace(/[※＊\*]\s*/g,'')     // 途中の※除去
-    .replace(/^[①②③④⑤]\s*/,'')  // 丸数字除去
-    .replace(/\s*心\s*$/,'')        // ラ・ムー特有の「心」除去
-    .replace(/[（(][冷凍][）)]/g,'（冷凍）') // 表記統一
+    .replace(/^\d{3,}\s*/,'')
+    .replace(/^[※＊\*]\s*/,'')
+    .replace(/[※＊\*]\s*/g,'')
+    .replace(/^[①②③④⑤]\s*/,'')
+    .replace(/\s*心\s*$/,'')
+    .replace(/[（(][冷凍][）)]/g,'（冷凍）')
     .replace(/\s+/g,' ')
     .trim();
 }
 
-// カテゴリ推定（強化版）
+// カテゴリ推定
 function guessCategory(n){
   if(/パン|米|野菜|肉|魚介|牛乳|卵|豆腐|納豆|弁当|おにぎり|飲料|ジュース|お茶|緑茶|水|食品|惣菜|果物|フルーツ|冷凍|ハム|ソーセージ|ウインナー|チーズ|ヨーグルト|アイス|菓子|スナック|チョコ|せんべい|はんぺん|ちくわ|さつま揚|かまぼこ|鶏|豚|牛|鮭|マグロ|サバ|イカ|エビ|豆|こんにゃく|もやし|キャベツ|大根|にんじん|玉ねぎ|じゃがいも|トマト|レタス|ほうれん草|ネギ|しょうが|にんにく|明太|マヨ|ケチャップ|ソース|醤油|味噌|塩|砂糖|油|パスタ|うどん|そば|ラーメン|カップ|レトルト|缶詰|お菓子|ポテチ|コーラ|ビール|酒|ワイン/.test(n)) return '食費';
   if(/洗剤|シャンプー|リンス|トイレ|ティッシュ|タオル|石鹸|歯ブラシ|歯磨|洗濯|掃除|電池|ラップ|袋|ポリ|サランラップ|アルミ|キッチン|スポンジ|消臭|芳香|虫除け|殺虫|ハンガー|ほうき|雑巾/.test(n)) return '日用品';
